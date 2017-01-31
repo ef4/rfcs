@@ -180,90 +180,6 @@ It will result in DOM like this:
 </span>
 ```
 
-### Fragments
-
-Components with zero elements (a template with out text or value rendeing) or
-multiple root elements are called "fragments". Fragments disregard attributes
-since the root elements is missing or ambiguous.
-
-To allow passed attributes to attach to the DOM, a frament can use the
-`@@attibutes` syntax to choose which element will reflect them. This syntax
-means "pass all the attributes I was given onto this element". For example this
-invocation:
-
-```hbs
-<some-component data-name="nicki">
-```
-
-And this definition template:
-
-```hbs
-<h1>Name</h1>
-<div @@attributes>Coming soon!</div>
-```
-
-Would render the following HTML:
-
-```html
-<h1>Name</h1>
-<div data-name="nicki">Coming soon!</div>
-```
-
-### Components and web components as root elements
-
-In some cases the root element of a template may itself be another component or
-web component. This is valid. For example this invocation:
-
-```hbs
-<article-wrapper class="spotlight">
-  {{body}}
-</article-wrapper>
-```
-
-And this definition template:
-
-```hbs
-<article-body>
-  {{yield}}
-</article-body>
-```
-
-Where `article-body` is either another Ember component or a web component. In
-this case `@@attributes` is again useful for passing the attributes of an
-invocation down. For example, again our invocation template:
-
-```hbs
-<article-wrapper class="spotlight">
-  My article body
-</article-wrapper>
-```
-
-And this definition template for `article-wrapper`:
-
-```hbs
-<article-body @@attributes>
-  {{yield}}
-</article-body>
-```
-
-And this definition template for `article-body`:
-
-```hbs
-<div>{{yield}}</div>
-```
-
-Would result in this HTML:
-
-```html
-<div class="spotlight">
-  My article body
-</div>
-```
-
-Note that `@@attributes` only passes down HTML attributes. Arguments are cannot
-be passed down in a batch, and instead each `@arg=` must be passed down
-explicitly.
-
 ### Attribute Merging
 
 Since both the caller of a component and the author of a component may choose to set the same HTML attributes, we define the following attribute merging rules.
@@ -304,7 +220,7 @@ It is possible to define a glimmer component with an HTML custom element for a r
 
 However, it should also be possible for a component to recursively invoke itself. This would appear to conflict with the above example (we don't want display-folder to infinitely recurse -- within its own definition, `display-folder` is actually an HTML element name, not a component invocation).
 
-Therefore, we make a rule that *the top-level element in a component's template is never treated as an invocation of that template itself.*
+Therefore, we make a rule that *the top-level element in a component's template is never treated as a component invocation.*
 
 This allows both use cases to coexist: the top-level element defines the component's HTML tag, while any inner uses of its own name are recursive invocations:
 
@@ -355,6 +271,7 @@ Or many top-level elements
 And thus implicitly allow any component to become a fragment if it doesn't satisfy the "one top-level element" rule. However, this would have significant downsides:
 
 * the addition of an extra element at the end of a template suddenly changes the whole meaning of your component from "normal component" to "fragment component". Since their semantics differ in important ways, this will cause surprising breakage, like missing HTML attributes. TODO: the attribute ambiguity problem could go away if we make it an error to pass attributes to a fragment unless the fragment explicitly uses `@@attributes`.
+
 * fragments need to allow component invocation as their first element. If that first element is not contained within a `<fragment>` marker, it creates a treacherous difference from the rule defined in the Recursive Invocation section ("the top-level element in a component's template is never treated as a component invocation"). TODO: we could address this concern by replacing that rule with a different syntax that prevents invocation.
 
 TODO: if we can statically address the downsides of implicit fragments, it would be really nice to not require `<fragment>`, especially to support people who are just breaking up existing piles of HTML into templates.
