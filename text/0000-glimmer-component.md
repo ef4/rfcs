@@ -180,6 +180,15 @@ It will result in DOM like this:
 </span>
 ```
 
+You are allowed to determine the element name dynamically using the syntax:
+
+```hbs
+<{{myTagName}}>
+  {{yield}}
+</{{myTagName}}>
+```
+
+
 ### Attribute Merging
 
 Since both the caller of a component and the author of a component may choose to set the same HTML attributes, we define the following attribute merging rules.
@@ -234,13 +243,6 @@ This allows both use cases to coexist: the top-level element defines the compone
    {{/if}}
  {{/each}}
 </display-folder>
-```
-
-TODO: should we support a dynamic tag name? Like
-
-```hbs
-<{{tagName}}>
-</{{tagName}}>
 ```
 
 ### Fragments
