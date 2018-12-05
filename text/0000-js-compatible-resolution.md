@@ -322,4 +322,4 @@ Whereas `foo/index.hbs` is resolvable, as long as we've registered a handler for
 
 # Unresolved questions
 
-
+It would probably be good to synthesize all the remaining-valid parts of the two earlier RFCs into this document, so there is one authoritative resource.
