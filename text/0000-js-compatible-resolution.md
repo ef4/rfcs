@@ -75,6 +75,7 @@ Specific proposed rules:
 
 1. We add the ability to use Ember's existing `import` semantics (the Module Resolver) from templates. This is supported in any template, irrespective of any "classic vs pods vs MU" distinction. This new `import` takes precedence, but anything not explicitly imported is handled the classic way by the Collection Resolver.
 2. Components and helpers inside MU code (meaning under `/src`) can _only_ be resolved by the Module Resolver, not the Collection Resolver. (See Compatibility Plan below for how addons can be compatible with both worlds.)
+3. Importing components and helpers that are authored in non-MU code is not supported.
 
 ## Frontmatter syntax
 
@@ -267,15 +268,31 @@ import { customHelper } from '.';
 <div class={{customHelper}} />
 ```
 
-## Filesystem structure implications
+## App structure implications
 
-Most of the MU structure remains unchanged. Specifically, you still need things like `src/data/models`, `src/init`, `/src/services`, and `/src/ui/routes/`.
+Most of the MU structure remains unchanged. Specifically, you still need things like `src/data/models`, `src/init`, `/src/services`, and `/src/ui/routes/` because all these things are still handled by the Collection Resolver.
 
-But now `/src/ui/components` loses any special meaning (because components and helpers are not resolvable by the Collection Resolver). It can still be a good idea as a default bucket for app-wide components, but it's not a privileged position with any special resolving rules anymore.
+But _within_ component collections (meaning `src/ui/components` plus any `-components` directories nested under routes) we don't need to impose any particular structure. You can nest components where they're used, and access them via relative imports.
 
-There is no longer any need for special `-components` or `-utils` private collections. You can simply nest components where they're used, and access them via relative imports.
+Within component collections, there is no longer any need for special `-components` or `-utils` private collections. And the names `component.js` and `template.hbs` lose their special meaning. There are no special rules for looking up components that differ from looking up any other modules.
 
-The names `component.js` and `template.hbs` lose their special meaning. There are no special rules for looking up components that differ from looking up any other modules.
+## Addon structure implications
+
+An addon authored in MU is relatively free to organize its components and helpers as it wishes within the `/src/ui/components` directory. Addon authors should provide a top-level entrypoint that re-exports public components & helpers so they're accessible without deep specifiers, and so it's clear what consitutes the addon's public API.
+
+The prior MU RFCs were vague on top-level entrypoints, but they were consistent in insisting that import specifiers should equal on-disk paths. In concordance with that, we clarify that the top-level entrypoint of an MU addon (one that contains a `/src` dir) is its true `index.js` at the addon's root. The ember-cli-specific code that often appears there instead can be placed elsewhere thanks to the `ember-addon.main` option in package.json. (This is a preexisting feature, not a new feature in this RFC.)
+
+For example, an addon containing one component might have `src/ui/components/the-component.js` and `src/ui/componetns/the-component.hbs`. These would technically be resolvable via `import TheComponent from "the-addon/src/ui/components/the-component"`, but that is an ugly deep-import and it's better for addon authors to provide clear reexports at the addon root:
+
+```
+// the addon's `index.js` file
+export { default } from "./src/ui/components/the-component";
+```
+
+So that consumers can say `import TheComponent from "the-addon";`
+
+The build-time hooks needed by ember-cli that are today placed by default in `index.js` can move to `build.js`, and that already works today if you set `ember-addon.main` to point at `build.js`.
+
 
 ## Compatibility Plan
 
@@ -323,3 +340,5 @@ Whereas `foo/index.hbs` is resolvable, as long as we've registered a handler for
 # Unresolved questions
 
 It would probably be good to synthesize all the remaining-valid parts of the two earlier RFCs into this document, so there is one authoritative resource.
+
+This design leaves routes and their templates unchanged from the prior MU RFC. That seems to be an uncanny gap. They're still named `template.hbs`, which is maybe OK, but then if you want to nest more components under them you still need to reserve a place under `-components` to avoid ambiguity with child routes, and that means your imports in the route template need to say `import thing from "./-components/thing"` which seems bad.
