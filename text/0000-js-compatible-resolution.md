@@ -42,17 +42,17 @@ import Component from "@ember/component";
 //                      ModuleSpecifier
 ```
 
-Meanwhile, the rapid adoption of NPM for browser-Javascript package management and Node as a build toolchain for browser-Javascript as caused Node's `node_modules` resolution algorithm to become the _de facto_ standard resolver. Most popular Javascript tools understand this convention.
+Meanwhile, the rapid adoption of NPM for browser-Javascript package management and Node as a build toolchain for browser-Javascript has caused Node's `node_modules` resolution algorithm to become the _de facto_ standard resolver. Most popular editors and Javascript tools understand this convention.
 
 Even in cases where people are proposing alternative resolvers (such as Yarn Plug and Play), there is a clear expectation that code that delegates resolution to Node will continue to work (Yarn Plug and Play patches node's resolver to achieve compatibility).
 
-Node's resolution implies that relative specifiers (like "./some/thing") work the way you would expect, and absolute specifiers (like "@ember/component") refer to an NPM package that can be found following the `node_modules` filesystem rules (the particular rules are not super relvant to our discussion -- it's enough to decide to delegate resolving to this `de facto` standard implementation).
+Node's resolution implies that relative specifiers (like "./some/thing") work the way you would expect, and absolute specifiers (like "@ember/component") refer to an NPM package that can be found following the `node_modules` filesystem rules (the particular rules are not super relvant to our discussion -- it's enough to decide to delegate resolving to this _de facto_ standard implementation).
 
 It's also important to note that tools using node_modules resolution widely support the ability to plug in handlers for alternative file extensions. `.ts`, `.css`, `.jsx`, and `.json` are all commonly resolved using the same resolution system. How each is intereted as a Javascript module is a pluggable decision that we are free to use to our advantage.
 
 But it's also important to note what is _not_ as easily pluggable without doing idiosyncratic, tool-specific work: changing the core way that `ModuleSpecifiers` are mapped into files.
 
-For example, making `import Something from "./some/thing"` resolve to `./some/thing.hbs` is a pretty widely-supported pattern. Whereas making it refer to `./some/thing/template.hbs` is not as widely-supported, and it likely to require a lot of tool-specific customizations.
+For example, making `import Something from "./some/thing"` resolve to `./some/thing.hbs` is a pretty widely-supported pattern. Whereas making it refer to `./some/thing/template.hbs` is not as widely-supported, and is likely to require a lot of tool-specific customizations.
 
 ## Resolution in Ember's Javascript
 
@@ -83,7 +83,9 @@ import { Select } from 'ember-power-select';
 <Button />
 ```
 
-The frontmatter section (delimited by `---`) uses Javascript syntax, but is limited to only allow import statements. This limitation could be lifted by a followup RFC, which would require clarifying the semantic boundary between names in the JS and names in the hbs.
+The frontmatter section (delimited by `---`) uses Javascript syntax, but is limited to only allow import statements.
+
+This limitation could be lifted by a followup RFC, which would require clarifying the semantic boundary between names in the JS and names in the hbs.
 
 ## Auto-insertion of imports
 
@@ -125,7 +127,7 @@ Given these requirements, the proposed design is:
 
     When that exported value is imported from a template, the value you get is the actual class (no magic here).
 
-3. When both `.js` and `.hbs` exist for a component, the build takes care of unobtrusively associating the template with the default value exported by the Javascript. The template must be co-located with the Javascript, having the same filename except for changing the extension to `.hbs`.
+3. When both `.js` and `.hbs` exist for a component, the build unobtrusively associates the template with the default value exported by the Javascript. The template must be co-located with the Javascript, having the same filename except for changing the extension to `.hbs`.
 
     For illustrative purposes, here's a toy implementation of how we can do "unobtrusive" association of the template with the Javascript value:
 
@@ -143,6 +145,9 @@ Given these requirements, the proposed design is:
     const templates = new WeakMap();
     function registerTemplate(value, templateDetails) {
       templates.set(value, templateDetails);
+      // notice that the value is unchanged. That's why I mean by "unobtrustive".
+      // You can still import this value into both templates and javascript and
+      // get what you expected to get.
       return value;
     }
     ```
@@ -179,7 +184,7 @@ Should work correctly for all of the following situations:
 3. `./path/to/button.js` exports a component class and `./path/to/button.hbs` is its template.
 4. `./path/to/button/index.js` exports a component class and `./path/to/button/index.hbs` is its template.
 
-Now, for anti-bikeshedding and aesthetic reasons we may want to lint against some of these patterns. But they are all necessarily supported by virtue of us not wanting to break the node_modules resolution rules. The best default choice becomes a **Best-practice guidance** concern, not a **Core primitives** concern.
+Now, for anti-bikeshedding and aesthetic reasons we may want to lint against some of these patterns. But they are all necessarily supported by virtue of us not wanting to break the node_modules resolution rules. The filesystem layout becomes a **Best-practice guidance** concern, not a **Core primitives** concern.
 
 Another thing that necessarily must work is reexporting components as named exports. Given this module:
 
