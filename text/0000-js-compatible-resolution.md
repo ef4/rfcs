@@ -54,21 +54,27 @@ But it's also important to note what is _not_ as easily pluggable without doing 
 
 For example, making `import Something from "./some/thing"` resolve to `./some/thing.hbs` is a pretty widely-supported pattern. Whereas making it refer to `./some/thing/template.hbs` is not as widely-supported, and is likely to require a lot of tool-specific customizations.
 
-## Resolution in Ember's Javascript
+## Ember's Two Resolution Systems
 
-This RFC is not about changing the way we do resolution between Javscript modules. Closing the remaining gaps between our existing semantics and the system just described is an active area of work that is making rapid progress and deserves its own RFC(s).
+Ember currently has two distinct resolution systems. The first, which I will call the "Module Resolver", is the one that governs how `import` in Javascript works today.  It's not exactly the same as the node_modules spec, but it's close:
 
-Our main focus is on resolution in templates.
+ - it already incorporates key features like the `./index.js` convention.
+ - it handles relative specifiers (starting with `..` or `.`) exactly the same
+ - it handles bare package names in a way that is at least inspired by NPM packages, although the details differ.
 
-## Resolution in Ember's Templates
+This RFC is not about changing how Module Resolver works. (Aligning it more closely with the broader node_modules semantics is the subject of other ongoing work, and can be it's own RFC.) For this RFC, we take the existing semantics as a given.
 
-Today, any component or helper used in a template is located via the Ember resolver. Its limitations are thoroughly described in [Module Unification, RFC 143](https://github.com/emberjs/rfcs/blob/master/text/0143-module-unification.md). Specifically, it has no locality (there's no such thing as relative lookup, so many things end up globally-scoped) and it has no notion of packages (all components and helpers from addon packages go into one big global namespace soup).
+The second resolution system in Ember apps is the one that locates components, helpers, routes, controllers, services, and other Ember-specifier object types. I will refer to this as the "Collection Resolver". The collection resolver's limitations are thoroughly described in [Module Unification, RFC 143](https://github.com/emberjs/rfcs/blob/master/text/0143-module-unification.md). In short, it has no locality (there's no such thing as relative lookup, so many things end up globally-scoped) and it has no notion of packages (all components, helpers, etc from addon packages go into one big global namespace soup).
 
-The first MU design attempted to fix this with strict filesystem layout rules and some additional syntax for packages. This makes the filesystem layout extremely high stakes, as it becomes "the only way to do things", so it took a lot of work to get concensus, and there were necessarily compromises (like the dash-prefixed collection directories). [Module Unification Packages, RFC 367](https://github.com/emberjs/rfcs/pull/367) makes a "small" extension to that plan by introducing `use` to fix the package syntax problem.
+This RFC is not about deprecating or dropping the Collection Resolver. Doing so properly would require both a long period of transition, and alternative designs for doing some of the things that the Collection Resolver can do that the Module Resolver should not. For example, the Collection Resolver implements dependency injection, which is _not_ the same semantics as module imports. DI and modules serve different purposes in large scale systems.
 
-This RFC proposes an alternative solution: once you accept the need for a `use`-like construct, there's little reason not to go all the way to using `import` and make it fully compatible with "ECMA modules with node_modules resolution" as described above. And once you choose that, you now have a flexible **Core Primitive** that takes some pressure off the filesystem layout design -- many design affordances become a question of **Best-practice guidelines** rather than hard implementation.
 
-Concretely: templates under a /src directory must use `import` to locate other components and helpers.
+## Module Resolving in Ember Templates
+
+Specific proposed rules:
+
+1. We add the ability to use Ember's existing `import` semantics (the Module Resolver) from templates. This is supported in any template, irrespective of any "classic vs pods vs MU" distinction. This new `import` takes precedence, but anything not explicitly imported is handled the classic way by the Collection Resolver.
+2. Components and helpers inside MU code (meaning under `/src`) can _only_ be resolved by the Module Resolver, not the Collection Resolver. (See Compatibility Plan below for how addons can be compatible with both worlds.)
 
 ## Frontmatter syntax
 
@@ -83,15 +89,15 @@ import { Select } from 'ember-power-select';
 <Button />
 ```
 
-The frontmatter section (delimited by `---`) uses Javascript syntax, but is limited to only allow import statements.
+The frontmatter section (delimited by `---`) uses Javascript syntax, but it is limited to only allow import statements.
 
-This limitation could be lifted by a followup RFC, which would require clarifying the semantic boundary between names in the JS and names in the hbs.
+(This limitation could be lifted by a followup RFC, which would require clarifying the semantic boundary between names in the JS and names in the hbs. That leaves the door open to a single-file component design that could put component Javascript, helpers, etc directly into the frontmatter.)
 
 ## Auto-insertion of imports
 
 You don't need to import built-in constructs that ship with Ember (like `if`) or Ember's built-in helpers (like `action`).
 
-To maintain framework extensibility and prevent these built-in from being so "magical", we offer a clear path for apps to register similar global names:
+To maintain framework extensibility and prevent these built-ins from being so "magical" and privileged, we offer a clear path for apps to register similar global names:
 
 ```js
 //config/template-globals.js
@@ -108,14 +114,14 @@ Addons are deliberately _not_ allowed to register themselves into the template-g
 
 A key piece of this design is explaining how to interpret Ember components as Javascript modules. There are some important requirements:
 
- - When you import a component from Javascript, you should get the values back you'd expect for a normal Javascript module. We don't want to rewrite things in an opaque way.
+ - When a component has a Javascript module, and you import the component from Javascript, you should get the values back you'd expect for a normal Javascript module. We don't want to rewrite things in an opaque way.
  - Consumers of a component should not need to know whether it is implemented as only a template, a template plus Javascript, or only Javascript.
- - A component that is reexported should continue to work unchanged (its template had better follow along automaticaly).
- - We should conform with "ECMA modules with node_modules resolution" as described above, which means we are not free to choose how ModuleSpecifiers map into actual files, but we _are_ free to choose how non-JS files are interpreted as JS modules.
+ - A component that is reexported should continue to work unchanged (in contrast with today, in which component authors needs to take special care to make their templates come along).
+ - We want to follow the _existing_ Module Resolver rules and not introduce new ones. Especially new ones that would diverge further from typical node_modules resolution.
 
 Given these requirements, the proposed design is:
 
-1. Imports are resolved following node's resolution strategy. We register a custom handler for `.hbs` files. `.js` files take precedence over `.hbs` files, such that if both exist for a given ModuleSpecifier, the JS wins.
+1. Imports in templates are resolved the same way they are resolved today in Javascript. Conceptually, we add a custom handler for `.hbs` files that allows them to be resolved the same as `.js` files. `.js` files take precedence over `.hbs` files, such that if both exist for a given ModuleSpecifier, the JS wins.
 
 2. Component Javascript should be authored using default exports (as they already are):
 
@@ -125,9 +131,9 @@ Given these requirements, the proposed design is:
     };
     ```
 
-    When that exported value is imported from a template, the value you get is the actual class (no magic here).
+    There is no magic that alters the exported value. When it's imported (whether in Javacript or HBS), the value you get is the actual class.
 
-3. When both `.js` and `.hbs` exist for a component, the build unobtrusively associates the template with the default value exported by the Javascript. The template must be co-located with the Javascript, having the same filename except for changing the extension to `.hbs`.
+3. When both `.js` and `.hbs` exist for a component, the build system unobtrusively associates the template with the default value exported by the Javascript. The template must be co-located with the Javascript, having the same filename except for changing the extension to `.hbs`.
 
     For illustrative purposes, here's a toy implementation of how we can do "unobtrusive" association of the template with the Javascript value:
 
@@ -154,7 +160,7 @@ Given these requirements, the proposed design is:
 
     Please note this is only an example to show that unobtrusive association is possible. The exact details would be private API.
 
-4. When only a template exists, it gets resolved following the normal node_modules resolution system as described in step 1. Our handler for `.hbs` files causes them to be interpreted as Javasript modules like:
+4. When only a template exists, it gets resolved following the normal Module Resolver system as described in step 1. Our handler for `.hbs` files causes them to be interpreted as Javasript modules like:
 
     ```js
     // for illustrative purposes only
@@ -165,6 +171,8 @@ Given these requirements, the proposed design is:
     The point of this is that you can import and invoke the template-only component in the same way you would a template-and-javascript component. In both cases, from glimmer's perspective the actual value that you import is used to lookup the component's metadata & template in a shared, behind-the-scenes WeakMap.
 
 5. Helpers are resolved just like component Javascript. They are simpler because there is no template association to worry about.
+
+6. Anything that was not resolved by this new system continues to be resolved the classic way.
 
 ## Implications
 
@@ -259,29 +267,35 @@ import { customHelper } from '.';
 <div class={{customHelper}} />
 ```
 
+## Filesystem structure implications
 
+Most of the MU structure remains unchanged. Specifically, you still need things like `src/data/models`, `src/init`, `/src/services`, and `/src/ui/routes/`.
 
+But now `/src/ui/components` loses any special meaning (because components and helpers are not resolvable by the Collection Resolver). It can still be a good idea as a default bucket for app-wide components, but it's not a privileged position with any special resolving rules anymore.
+
+There is no longer any need for special `-components` or `-utils` private collections. You can simply nest components where they're used, and access them via relative imports.
+
+The names `component.js` and `template.hbs` lose their special meaning. There are no special rules for looking up components that differ from looking up any other modules.
+
+## Compatibility Plan
+
+Apps can unilterally adopt MU because they're still allowed to fall back to classic resolving for addons that are not authored in MU.
+
+We can provide a shim utility to addon authors that allows them to reexport their MU components & helpers as a classic app tree, when the consuming app is not MU-aware. This lets addons upgrade unilterally, while clearly segregating the compatibility code within the shim utility, where it can be easily turned off in apps that don't need it.
 
 # How We Teach This
 
-What names and terminology work best for these concepts and why? How is this
-idea best presented? As a continuation of existing Ember patterns, or as a
-wholly new one?
+This is intended to simplify the teaching story because
 
-Would the acceptance of this proposal mean the Ember guides must be
-re-organized or altered? Does it change how Ember is taught to new users
-at any level?
+ - users already need to learn how `import` works
+ - we are being careful to make sure it means exactly the same thing in templates
 
-How should this feature be introduced and taught to existing Ember
-users?
 
 # Drawbacks
 
-Why should we *not* do this? Please consider the impact on teaching Ember,
-on the integration of this feature with other existing and planned features,
-on the impact of the API churn on existing apps, etc.
+Explicit imports require more typing. A large template that uses a large number of components and helpers could end up with a big stack of imports. This is not a unique problem to our system, however, and it's already something developers need to learn to manage wisely in Javascript.
 
-There are tradeoffs to choosing any path, please attempt to identify them here.
+This proposal does not require any breaking changes to Handlebars syntax (a Handlebars parser that doesn't know anything about it will treat the front matter as "just content", which is harmless). But if we want nice syntax highlighting and completion inside the frontmatter, we may need to update tools to be aware of it. On the plus side, once this work is done it leaves us in excellent position to expand the frontmatter to full single-file components.
 
 # Alternatives
 
@@ -308,5 +322,4 @@ Whereas `foo/index.hbs` is resolvable, as long as we've registered a handler for
 
 # Unresolved questions
 
-Optional, but suggested for first drafts. What parts of the design are still
-TBD?
+
